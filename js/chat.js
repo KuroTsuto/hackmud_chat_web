@@ -80,7 +80,7 @@ User.prototype.print=function() {
 function Account(last=null) {
 	this.users=null;
 	this.token=null;
-	this.last=last
+	this.last=last;
 }
 Account.prototype.login=function(pass) {
 	if(pass.length>10)return this.update(pass);
