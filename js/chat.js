@@ -83,14 +83,17 @@ function Account(last=null) {
 	this.last=last
 }
 Account.prototype.login=function(pass) {
-	if(pass.length>10)return this.update(pass)
-	return API.get_token(pass).then(token=>this.update(token.chat_token))
-
+	if(pass.length>10)return this.update(pass);
+	return API.get_token(pass)
+		.then(dat=>{
+			if(!dat.ok) return Promise.reject(dat.msg);
+			return this.update(dat.chat_token);
+		})
 }
 Account.prototype.update=function(token) {
 	this.token=token;
 	return API.account_data(this.token).then(dat=>{
-		if(!dat.ok)return false;
+		if(!dat.ok)return Promise.reject(dat.msg);
 		this.users={};
 		var channels=[];
 		for(var i in dat.users) {
@@ -100,7 +103,7 @@ Account.prototype.update=function(token) {
 		return this;
 	})
 }
-Account.prototype.poll=function(ext={}) {
+Account.prototype.poll=function(ext={},users) {
 	var ar=[];
 	var names=[];
 	if(this.last) {
@@ -109,9 +112,16 @@ Account.prototype.poll=function(ext={}) {
 		if(ext.after=='last')
 			ext.after=this.last-0.001;
 	}
-	return API.chats(this.token,Object.keys(this.users),ext)
+
+	if(!(users instanceof Array))
+		users=Object.keys(this.users);
+
+	if(!users.length)
+		return;
+
+	return API.chats(this.token,users,ext)
 	.then(o=>{
-		if(!o.ok)return o;
+		if(!o.ok)return Promise.reject(o.msg);
 		var last=0;
 		for(var i in o.chats) {
 			o.chats[i].sort((a,b)=>a.t-b.t);

@@ -1,10 +1,13 @@
 <html>
 	<head>
 		<script src="js/lib/jquery-1.12.4.min.js"></script>
+		<script src="js/constants.js"></script>
+		<script src="js/util.js"></script>
 		<script src="js/chat.js"></script>
-		<script src="js/init.js"></script>
-		<script src="js/messages.js"></script>
 		<script src="js/settings.js"></script>
+		<script src="js/app-data.js"></script>
+		<script src="js/ui-data.js"></script>
+		<script src="js/app.js"></script>
 		<script src="js/ui.js"></script>
 		<link rel="stylesheet" href="css/layout.css"></link>
 		<link rel="stylesheet" href="css/hackmud.css"></link>
@@ -13,19 +16,21 @@
 	<body>
 		<script>
 			$(document).ready(function() {
-				settings.ready();
-				ui_ready();
+				var app = window.app = new App();
+				ui.init( app );
+				app.init();
 			});
 		</script>
-		<div id="chat_pass_login">
-			to connect enter your <span class="scr-user">chat_pass</span> from in-game: <input onchange="login(this.value)">
+		<div id="app">
+			<div id="chat_pass_login" style="display: none;">
+				to connect enter your <span class="scr-user">chat_pass</span> from in-game: <input id="chat_pass_input">
+			</div>
+			<div id="chat_area" style="display: none;">
+			</div>
 		</div>
 
 		<div id="chat_beta_header">
 			<div class="title">hackmud web chat beta</div> <div class="contribute">contribute: <a href="https://github.com/DrizzlyBear/hackmud_chat_web" target="_blank">https://github.com/DrizzlyBear/hackmud_chat_web</a></div>
-		</div>
-
-		<div id="chat_area">
 		</div>
 	</body>
 </html>

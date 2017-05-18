@@ -1,259 +1,189 @@
-function ui_ready() {
-	var token = getToken();
-	if (token) {
-		act.update(token).then(replaceUI);
-	}
-}
+var ui = {
+	$root: null,
+	$scenes: {},  // Distinct top-level presentations
+	channels: {}, // Channel state & reference cache, keyed by channel id
+	users: {},    // User state & reference cache, keyed by user name
+	user_tabset: null,
+	$pass_input: null
+};
 
-function login(pass) {
-	act.login(pass).then(function() {
-		saveToken();
-		replaceUI();
+// Slash command handlers keyed by command. "this" is bound to the MessageList corresponding to the
+// channel whose <input> received the command.
+ui.slash_commands = {
+	color: function( color_code ) {
+		if (color_code) {
+			if(/^[a-z0-5]$/i.test(color_code) || color_code == 'none') {
+				settings.setColor(color_code);
+				this.write('Set chat color to "' + color_code + '". Sample: "' + UI.colorCallback(null, color_code, 'foo bar baz') + '"');
+			}
+			else {
+				this.write("Invalid color code. Please specify a single letter, or a number in the range 0-5.");
+			}
+		} else {
+			if (settings.color_code) {
+				color_code = settings.color_code;
+				this.write('Current chat color is "' + color_code + '". Use "/color none" to unset. Sample: "' + UI.colorCallback(null, color_code, 'foo bar baz') + '"');
+			} else {
+				this.safeWrite("Currently using the default chat color.");
+			}
+		}
+	},
+	help: function() {
+		this.safeWrite('Commands: /help, /ignore <user>, /color <letter|color code|none>, /tell <user> <optional message>, /users');
+		if (!settings.skip_help) {
+			ui.scenes.chat.find("input").attr("placeholder", null)
+			settings.setSkipHelp(true);
+		}
+	},
+	ignore: function( username ) {
+		if (username) {
+			settings.addIgnore(username);
+			this.safeWrite("Ignored " + username);
+		} else {
+			this.safeWrite("Ignore list: " + settings.ignore_list.join(", "));
+		}
+	},
+	tell: function( username, msg ) {
+		if (username) {
+			app.handleSlashTell( this.channel.id, this.channel.user.name, username, msg )
+				.catch( data => {
+					this.writeError(data.error.msg)
+					this.scrollToBottom();
+				});
+		} else {
+			this.safeWrite("Please specify a user to open a conversation with");
+		}
+	},
+	users: function() {
+		//HACK: should probably either implement handleSlashUsers on the controller, a more general
+		//interface for controller slash commands, or keep user list in view state
+		var u=app.channels.get( this.channel.id ).getUsers().sort();
+		var max=Math.max.apply(null,u.map(u=>u.length))+1
+		u=u.map(u=>"<pre class='nobreak'>"+u+"&nbsp;".repeat(max-u.length)+"</pre>");
+		this.write("<span class='break'>"+u.join(' ')+"</span>");
+	}
+};
+
+ui.init = function( app, root ) {
+	ui.$root = $(root);
+	ui.$scenes.login = $('#chat_pass_login');
+	ui.$pass_input = $('#chat_pass_input');
+	ui.$scenes.chat = $('#chat_area');
+	ui.user_tabset = new UI.Tabset( 'user', ui.$scenes.chat, username => app.setActiveUser( username ) );
+
+	ui.$scenes.chat.append( ui.user_tabset.$ );
+	ui.$pass_input.on( 'change', function() {
+		let pass = $(this).val().trim();
+		if( !pass ) {
+			$(this).val('');
+		}
+		else {
+			app.login( pass );
+		}
+	});
+
+	app.on( EVENTS.ADD_CHANNEL, channel => {
+		ui.channels[ channel.id ] = ui.users[ channel.user ].createChannel( channel.id, channel.name, channel.type, ui.handleInput );
+	});
+
+	app.on( EVENTS.ADD_CHAT_USER, username => {
+		ui.users[ username ] = ui.user_tabset.addTab(
+			new UI.User( ui.user_tabset, username, channel_id => app.setActiveChannel( channel_id ) )
+		);
+	});
+
+	app.on( EVENTS.ADD_MESSAGE, msg => {
+		ui.channels[ msg.channel ].addMessage( msg.id, msg.user, msg.time, msg.msg );
+	});
+
+	app.on( EVENTS.ADD_SYSTEM_MESSAGE, msg => {
+		ui.channels[ msg.channel ].messages.safeWrite( msg.msg );
+	});
+
+	app.on( EVENTS.CHANGE_ACTIVE_CHANNEL, channel_id => {
+		ui.channels[ channel_id ].setActive();
+	});
+
+	app.on( EVENTS.CHANGE_ACTIVE_USER, username => {
+		ui.users[ username ].setActive();
+	});
+
+	app.on( EVENTS.INIT, (is_logged_in) => {
+		if( is_logged_in )
+			return;
+
+		ui.changeScene( 'login' );
+		ui.$pass_input.focus();
+	});
+
+	app.on( EVENTS.LOGIN_FAILURE, ( e ) => {
+		//TODO: better error parsing in the controller
+		let error = e.body && e.body.msg;
+
+		if( !error )
+			error = 'an error occured (' + e.statusCode + ')';
+
+		ui.$pass_input.removeAttr( 'disabled' ).attr( 'placeholder', ui.$pass_input.val() + ': ' + error ).val('');
+		ui.changeScene( 'login' );
+		ui.$pass_input.focus();
+	});
+
+	app.on( EVENTS.LOGIN_PENDING, () => {
+		ui.$pass_input.attr( 'disabled', 'disabled' ).removeAttr('placeholder');
+	});
+
+	app.on( EVENTS.LOGIN_SUCCESS, () => {
+		ui.$pass_input.removeAttr( 'disabled' ).val('');
+		ui.changeScene( 'chat' );
+	});
+
+	app.on( EVENTS.LOGOUT, () => {
+		ui.changeScene( 'login' );
+		ui.user_tabset.clear();
+		ui.channels = {};
+		ui.users = {};
+	});
+
+	app.on( EVENTS.REMOVE_CHANNEL, channel_id => {
+		let channel = ui.channels[ channel_id ];
+		channel.tabset.removeTab( channel_id );
+		delete ui.channels[ channel_id ];
 	});
 }
 
-function saveToken() {
-	// saving the token as a cookie, rather than local storage, under the assumption that people are in the habit of clearing cookies specifically when they want to de-auth a site
-	document.cookie = 'chat_token=' + act.token;
-}
-function getToken() {
-	return readCookieValue('chat_token');
-}
-
-function readCookieValue(key) {
-	return document.cookie.replace(new RegExp('(?:(?:^|.*;\\s*)' + key + '\\s*\\=\\s*([^;]*).*$)|^.*$'), "$1");
+ui.changeScene = function( scene ) {
+	let names = Object.keys( ui.$scenes );
+	for(let i = names.length - 1; i >= 0; i--) {
+		if( scene == names[ i ] )
+			ui.$scenes[ names[ i ] ].show();
+		else
+			ui.$scenes[ names[ i ] ].hide();
+	}
 }
 
-function setupChannel(user,chan_ul,user_div,chan,tell=false) {
-	let li = $('<li class="channel_tab">');
-	if(tell) {
-		li.append($('<span class="col-C">@</span>'));
+ui.handleInput = function( channel, msg ) {
+	if( msg[0] == '/' ) {
+		ui.handleSlashCommand( channel, msg.slice(1));
 	}
 	else {
-		li.append($('<span class="col-C">#</span>'));
-	}
-	li.append(chan);
-	chan_ul.append(li);
-
-
-	let channel_div = $('<div class="channel_area">');
-	channel_div.hide();
-	user_div.append(channel_div);
-
-	let msg_list = $('<ul class="message_list">');
-	channel_div.append(msg_list);
-
-	let list = new MessageList((tell?user.tells:user.channels)[chan], msg_list, user);
-
-	list.li=li; // hackity hack hack
-	list.channel_div=channel_div;
-	if(tell) {
-		list.channel.users=[user.name,chan]
-	}
-
-	(tell?user.tells:user.channels)[chan].list = list;
-
-	li.click(function() {
-		$('.channel_tab').removeClass('active');
-		li.addClass('active');
-		list.clearMentions();
-
-		$('.channel_area').hide();
-		channel_div.show();
-
-		list.scrollToBottom();
-	});
-
-
-	let form = $('<form action="">');
-	let input = $('<input type="text" class="chat-input">');
-	if (!settings.skip_help)
-	{
-		input.attr("placeholder", "/help");
-	}
-
-	let ch=chan;
-	let u=user;
-	form.keydown(_=>list.clearMentions())
-	$(list).scroll(_=>list.clearMentions())
-	form.submit(function() {
-		try {
-			let msg = input.val();
-
-			if(msg.trim().length == 0) {
-				return false;
-			}
-
-			if (msg[0] == '/') {
-				list.handleSlashCommand(msg.slice(1));
-			} else {
-				if (settings.color_code) {
-					msg = '`' + settings.color_code + msg + '`';
-				}
-				if(tell)
-					list.tell(u,ch,msg)
-				else
-					list.send(msg);
-			}
-			input.val('');
-		} catch (e) {
-			console.error(e);
-		}
-		return false;
-	})
-
-	input.keydown(function(e) {
-		let keycode = e.which;
-
-		if(keycode == 34) { // PgDn
-			list.pgDn();
-		} else if(keycode == 33) { // PgUp
-			list.pgUp();
-		}
-	});
-	form.append(input);
-	channel_div.append(form);
-}
-
-function replaceUI() {
-	$('#chat_pass_login').hide();
-
-	main_div = $("#chat_area");
-
-	main_div.innerHTML = ''
-
-	var user_ul = $('<ul class="tab-list">');
-	let tabset = $('<div class="tabset">');
-	tabset.append(user_ul);
-	main_div.append(tabset);
-
-	for (let name in act.users) {
-		user = act.users[name];
-		if(!user.tells)user.tells={}
-
-		let li = $('<li class="user_tab">');
-		user.li=li;
-		li.text(name);
-		user_ul.append(li);
-
-		let user_div = $('<div class="user_area" id="user-' + name + '">');
-		main_div.append(user_div);
-
-		li.click(function() {
-			$('.user_tab').removeClass('active');
-			li.addClass('active');
-
-			$('.user_area').hide();
-			user_div.show();
-		});
-
-		let chan_ul = $('<ul class="tab-list">');
-		let tabset = $('<div class="tabset">');
-
-		tabset.append(chan_ul);
-		user_div.append(tabset);
-
-		user.chan_ul=chan_ul;
-		user.user_div=user_div
-		for (let chan in user.channels) {
-			setupChannel(user,chan_ul,user_div,chan);
+		if( settings.color_code ) {
+			msg = '`' + settings.color_code + msg + '`';
 		}
 
-		for (let tell in user.tells) {
-			setupChannel(user,chan_ul,user_div,tells,true);
-		}
-	}
-
-	$('.channel_area').hide();
-	$('.user_area').hide();
-
-	if (!act.poll_interval) {
-		act.poll_interval = setInterval(function() {
-			act.poll({after:"last"}).then(function(data) {
-				for (user in data.chats) {
-					let channels = act.users[user].channels;
-					let tells = act.users[user].tells;
-
-					// new messages, in oldest-to-newest order
-					// TODO deal with tells
-					recent = data.chats[user].filter(m => m.channel && !channels[m.channel].list.messages[m.id]);
-
-					data.chats[user].filter(m => !m.channel).map(m=> m.from_user==user?m.to_user:m.from_user).forEach(m=>{if(!tells[m]){tells[m]={};setupChannel(act.users[user],act.users[user].chan_ul,act.users[user].user_div,m,true);}});
-					recent_tells = data.chats[user].filter(m => !m.channel && !tells[m.from_user==user?m.to_user:m.from_user].list.messages[m.id]);
-
-					recent.forEach(function(msg) {
-						channels[msg.channel].list.recordMessage(msg);
-					});
-					recent_tells.forEach(function(msg) {
-						tells[msg.from_user==user?msg.to_user:msg.from_user].list.recordMessage(msg);
-					});
-				}
-			});
-		}, 1200);
+		app.sendMessage( channel.id, msg );
 	}
 }
 
-function colorizeUser(user) {
-	let valid_colors = "BEFGHIJLMNQUVWY";
-	let num_colors = valid_colors.length;
+ui.handleSlashCommand = function( channel, str ) {
+	var components = str.split(' ');
+	var command = components.shift();
 
-	let hash = user.split("").map(e => e.charCodeAt(0)).reduce((a, e) => a+e, 0);
-	let colorCode = valid_colors.charAt((user.length + hash) % num_colors);
-	let colorized = '`' + colorCode + user + "`";
+	if ( ui.slash_commands[ command ] ) {
+		return ui.slash_commands[ command ].apply( channel.messages, components );
+	}
+	else {
+		channel.messages.write('Invalid slash command "' + command + '". See /help for a list of commands.')
+	}
 
-	return colorized;
-}
-
-function colorizeMentions(msg) {
-	return msg.replace(/@(\w+)(\W|$)/g, function(match, name, endPad) {
-		return replaceColorCodes('`C@`' + colorizeUser(name) + endPad);
-	});
-}
-
-function colorizeScripts(msg) {
-	let trustUsers = [
-		'accts',
-		'autos',
-		'chats',
-		'corps',
-		'escrow',
-		'gui',
-		'kernel',
-		'market',
-		'scripts',
-		'sys',
-		'trust',
-		'users'
-	];
-
-	return msg.replace(/(#s.|[^#\.a-z0-9_]|^)([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)/g, function(match, pre, username, script) {
-		let colorCode = trustUsers.indexOf(username) !== -1 ? 'F' : 'C';
-
-		return replaceColorCodes(pre + '`' + colorCode + username + '`.`L' + script + '`');
-	});
-}
-
-function replaceColorCodes(string) {
-	return string.replace(/`([0-9a-zA-Z])([^:`\n]{1,2}|[^`\n]{3,}?)`/g, colorCallback);
-}
-
-function formatMessage(obj) {
-	let date = new Date(obj.t * 1000);
-	let timestr = [date.getHours(), date.getMinutes()].map(a => ('0' + a).slice(-2)).join(":");
-	let msg = escapeHtml(obj.msg);
-	let coloredUser = replaceColorCodes(colorizeUser(obj.from_user));
-	msg = colorizeMentions(msg);
-	msg = colorizeScripts(msg);
-	msg = replaceColorCodes(msg).replace(/\n/g, '<br>');
-
-	return '<span class="timestamp">' + timestr + "</span> " + coloredUser + ' <span class="msg-content">' + msg + '</span>';
-}
-
-function colorCallback(not_used, p1, p2) {
-	let css = (p1.match(/[A-Z]/) ? 'col-cap-' : 'col-') + p1;
-	return '<span class="' + css + '">' + p2 + '</span>';
-}
-
-function escapeHtml(str) {
-	return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	channel.messages.scrollToBottom();
 }
