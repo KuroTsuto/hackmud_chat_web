@@ -167,7 +167,7 @@ ui.handleInput = function( channel, msg ) {
 	}
 	else {
 		if( settings.color_code ) {
-			msg = '`' + settings.color_code + msg + '`';
+			msg = UI.colorize(settings.color_code,msg);
 		}
 
 		app.sendMessage( channel.id, msg );

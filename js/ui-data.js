@@ -273,6 +273,7 @@ var UI = (()=>{
 	UI.User = User;
 	UI.Channel = Channel;
 	UI.MessageList = MessageList;
+	UI.MessageInput = MessageInput;
 
 	UI.colorCallback = ( not_used, p1, p2 ) => {
 		let css = (p1.match(/[A-Z]/) ? 'col-cap-' : 'col-') + p1;
@@ -292,6 +293,62 @@ var UI = (()=>{
 
 	UI.replaceColorCodes = function( string ) {
 		return string.replace(/`([0-9a-zA-Z])([^:`\n]{1,2}|[^`\n]{3,}?)`/g, UI.colorCallback);
+	}
+
+	UI.parseColors = function(s,color) {
+		var dat=[];
+		var l=s.split("\n");
+		for(var j=0;j<l.length;++j) {
+			var s=l[j];
+			for(var i=0;i<s.length;) {
+				var ss=s.substring(i);
+				if(s[i]=='`') {
+					var reg=new RegExp("^`([^`]+)`");
+					var x=ss.match(reg);
+					if(x) {
+						dat.push({
+							start:'`'+x[1][0],
+							end:'`',
+							str:x[1].substring(1)
+						})
+						i+=x[0].length;
+						continue;
+					}
+				}
+
+				var z=ss.search(/`/,1);
+				if(z==-1)z=ss.length;
+				if(z==0)z=1;
+				var str=ss.substring(0,z);
+				dat.push({
+					start:color?'`'+color:"",
+					end:color?'`':"",
+					str:str
+				});
+				i+=str.length;
+			}
+			if(j!=l.length-1) {
+				dat.push({
+					start:"",
+					end:"",
+					str:"\n"
+				});
+			}
+		}
+
+		return dat
+	}
+
+	UI.colorize = function(color,msg) {
+		return UI.assembleText(UI.parseColors(msg,color))
+	}
+
+	UI.assembleText = function(s) {
+		var ret="";
+		for(var i=0;i<s.length;++i)
+			if(s[i].str.length)
+				ret+=s[i].start+s[i].str+s[i].end;
+		return ret;
 	}
 
 	return UI;
