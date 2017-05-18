@@ -61,7 +61,7 @@ Channel.prototype.print=function() {
 function User(account,name,dat) {
 	this.account=account;
 	this.name=name;
-	this.channels={}
+	this.channels={};
 	for(var i in dat) {
 		this.channels[i]=new Channel(this,i,dat[i]);
 	}
