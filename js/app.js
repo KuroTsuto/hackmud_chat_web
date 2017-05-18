@@ -86,21 +86,6 @@ App.prototype.getToken = function() {
   return readCookieValue( this.config.token_cookie );
 }
 
-App.prototype.handleInput = function( input ) {
-  if ( input[0] == '/' ) {
-    this.handleSlashCommand( input.slice(1) );
-  }
-  else {
-    if ( this.settings.color_code ) {
-      msg = '`' + this.settings.color_code + msg + '`';
-    }
-    if( this.active_channel.is_tell )
-      list.tell(u,ch,msg)
-    else
-      list.send(msg);
-  }
-}
-
 App.prototype.handleSlashTell = function( in_channel, from, to, msg ) {
   let user       = this.users.get( from );
   let channel_id = user.channels.lookup( to, CHANNEL_TYPES.PRIVATE );

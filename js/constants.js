@@ -36,8 +36,3 @@ var CHANNEL_TYPES = {
   PUBLIC:  'CHAT',
   PRIVATE: 'TELL'
 };
-
-var SCENES = {
-  LOGIN: 'LOGIN',
-  CHAT:  'CHAT'
-}
