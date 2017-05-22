@@ -16,8 +16,6 @@ In general, I've taken my best shot at an initial separation of business and vie
 
 Miscellaneous Notes & Changes:
  - Includes #65 & #66 logic
- - Closes #29 and #33 (fixes #59 regression)
- - Temporary fix for #37 until we have a more unified error/notification system
  - Provides all of the business logic for #19 - just missing the button
  - Some `chats.js` functions returning promises have been modified to reject if `!res.ok` instead of resolving
  - `Account.poll()` now accepts an array of usernames, and will poll just those users, if provided - otherwise will poll all users

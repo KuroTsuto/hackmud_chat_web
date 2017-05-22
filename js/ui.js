@@ -4,7 +4,8 @@ var ui = {
 	channels: {}, // Channel state & reference cache, keyed by channel id
 	users: {},    // User state & reference cache, keyed by user name
 	user_tabset: null,
-	$pass_input: null
+	$pass_input: null,
+	$login_error: null
 };
 
 // Slash command handlers keyed by command. "this" is bound to the MessageList corresponding to the
@@ -68,6 +69,7 @@ ui.init = function( app, root ) {
 	ui.$root = $(root);
 	ui.$scenes.login = $('#chat_pass_login');
 	ui.$pass_input = $('#chat_pass_input');
+	ui.$login_error = $('#chat_login_error');
 	ui.$scenes.chat = $('#chat_area');
 	ui.user_tabset = new UI.Tabset( 'user', ui.$scenes.chat, username => app.setActiveUser( username ) );
 
@@ -117,19 +119,28 @@ ui.init = function( app, root ) {
 	});
 
 	app.on( EVENTS.LOGIN_FAILURE, ( e ) => {
-		//TODO: better error parsing in the controller
-		let error = e.body && e.body.msg;
-
-		if( !error )
-			error = 'an error occured (' + e.statusCode + ')';
-
-		ui.$pass_input.removeAttr( 'disabled' ).attr( 'placeholder', ui.$pass_input.val() + ': ' + error ).val('');
+		var msg;
+		if( res.body && res.body.msg ) {
+			msg = res.body.msg;
+		}
+		else {
+			switch(res.statusCode) {
+				case 0:
+					msg = 'could not contact the server';
+					break;
+				default:
+					msg = 'an error occured (' + res.statusCode + ')';
+					break;
+			}
+		}
 		ui.changeScene( 'login' );
-		ui.$pass_input.focus();
+		ui.$login_error.text('Login failed: ' + msg);
+		ui.$pass_input.removeAttr('disabled').focus();
 	});
 
 	app.on( EVENTS.LOGIN_PENDING, () => {
-		ui.$pass_input.attr( 'disabled', 'disabled' ).removeAttr('placeholder');
+		ui.$pass_input.attr( 'disabled', 'disabled' );
+		ui.$login_error.text('');
 	});
 
 	app.on( EVENTS.LOGIN_SUCCESS, () => {
